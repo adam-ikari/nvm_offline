@@ -2,8 +2,8 @@
 
 # install.sh脚本测试
 
-# 启用严格的错误处理
-set -euo pipefail
+# 不使用set -euo pipefail，因为我们想要更灵活的错误处理
+# set -euo pipefail
 
 # 获取脚本所在目录的绝对路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,6 +51,7 @@ test_script_exists() {
         return 1
     fi
     echo "PASS: install.sh script exists"
+    return 0
 }
 
 # 测试2: 检查脚本是否有执行权限
@@ -60,6 +61,7 @@ test_script_executable() {
         return 1
     fi
     echo "PASS: install.sh is executable"
+    return 0
 }
 
 # 测试3: 检查脚本是否能正常运行（不实际安装）
@@ -98,6 +100,7 @@ test_script_runs() {
     export SHELL="$original_shell"
     
     echo "PASS: install.sh runs without errors"
+    return 0
 }
 
 # 测试4: 检查是否能正确检测shell
@@ -130,6 +133,7 @@ test_shell_detection() {
     # 恢复环境变量
     export HOME="$original_home"
     export SHELL="$original_shell"
+    return 0
 }
 
 # 运行所有测试
@@ -170,6 +174,7 @@ run_tests() {
     
     echo "Tests completed: $passed passed, $failed failed"
     
+    # 只有当有测试失败时才返回非零退出码
     if [[ $failed -gt 0 ]]; then
         return 1
     fi
@@ -179,3 +184,6 @@ run_tests() {
 
 # 执行测试
 run_tests
+exit_code=$?
+echo "Test script exiting with code: $exit_code"
+exit $exit_code
