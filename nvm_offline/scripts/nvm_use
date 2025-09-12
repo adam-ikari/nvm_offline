@@ -2,46 +2,176 @@
 
 # NVM Offline Version Switch Script
 
+# 启用严格的错误处理
+set -euo pipefail
+
+# 默认语言为中文
+LANGUAGE="zh"
+VERSION=""
+
+# 解析命令行参数
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --lang)
+            LANGUAGE="$2"
+            shift 2
+            ;;
+        *)
+            # 如果不是--lang参数，则认为是版本号
+            if [[ -z "$VERSION" ]]; then
+                VERSION="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# 定义消息函数
+msg() {
+    case $LANGUAGE in
+        en) echo "$1" ;;
+        zh|*) echo "$2" ;;
+    esac
+}
+
+# 检测当前使用的shell
+detect_shell() {
+    # 获取当前shell的路径
+    local current_shell
+    current_shell=$(ps -p $$ -o comm= 2>/dev/null) || current_shell=""
+    
+    # 如果无法通过ps获取，则尝试使用环境变量
+    if [[ -z "$current_shell" ]]; then
+        current_shell="$SHELL"
+    fi
+    
+    # 提取shell名称（移除路径）
+    local shell_name
+    shell_name=$(basename "$current_shell")
+    
+    # 根据shell类型设置配置文件路径
+    case "$shell_name" in
+        bash)
+            echo "$HOME/.bashrc"
+            ;;
+        zsh)
+            echo "$HOME/.zshrc"
+            ;;
+        fish)
+            echo "$HOME/.config/fish/config.fish"
+            ;;
+        *)
+            # 默认使用bash配置文件
+            echo "$HOME/.bashrc"
+            ;;
+    esac
+}
+
+# 安全地添加PATH环境变量到配置文件
+add_path_to_config() {
+    local config_file="$1"
+    local path_to_add="$2"
+    
+    # 创建配置文件的目录（如果不存在）
+    mkdir -p "$(dirname "$config_file")"
+    
+    # 创建临时文件
+    local temp_file
+    temp_file=$(mktemp)
+    
+    # 如果配置文件存在，先复制内容到临时文件
+    if [[ -f "$config_file" ]]; then
+        cp "$config_file" "$temp_file"
+    fi
+    
+    # 检查是否已存在相同的PATH设置
+    if ! grep -q "export PATH=.*$(echo "$path_to_add" | sed 's/[[\.*^$()+?{|]/\\&/g')" "$temp_file" 2>/dev/null; then
+        echo "export PATH=\"$path_to_add:\$PATH\"" >> "$temp_file"
+    fi
+    
+    # 原子性地移动临时文件到配置文件
+    mv "$temp_file" "$config_file"
+}
+
+# 动态获取可用的Node.js版本
+get_available_versions() {
+    local node_bins_dir="$1"
+    local versions=()
+    
+    # 检查目录是否存在
+    if [[ ! -d "$node_bins_dir" ]]; then
+        return 1
+    fi
+    
+    # 遍历目录中的tar.xz文件，提取版本号
+    for file in "$node_bins_dir"/node-v*-linux-x64.tar.xz; do
+        if [[ -f "$file" ]]; then
+            # 从文件名中提取版本号
+            local version
+            version=$(basename "$file" | sed 's/node-v\([0-9]*\)\..*/\1/')
+            versions+=("$version")
+        fi
+    done
+    
+    # 输出版本号（去重并排序）
+    printf '%s\n' "${versions[@]}" | sort -u
+}
+
 # 检查参数
-if [ $# -eq 0 ]; then
-    echo "用法: nvm_use <version>"
-    echo "可用版本: 16, 18, 20, 22"
+if [[ -z "$VERSION" ]]; then
+    msg "Usage: nvm_use <version> [--lang en|zh]" "用法: nvm_use <version> [--lang en|zh]"
+    
+    # 动态获取可用版本
+    NVM_OFFLINE_DIR="$HOME/.nvm_offline"
+    NODE_BINS_DIR="$NVM_OFFLINE_DIR/node_bins"
+    
+    if [[ -d "$NODE_BINS_DIR" ]]; then
+        msg "Available versions: $(get_available_versions "$NODE_BINS_DIR" | tr '\n' ' ')" "可用版本: $(get_available_versions "$NODE_BINS_DIR" | tr '\n' ' ')"
+    else
+        msg "Available versions: 16, 18, 20, 22" "可用版本: 16, 18, 20, 22"
+    fi
+    
     exit 1
 fi
 
-VERSION=$1
 NVM_OFFLINE_DIR="$HOME/.nvm_offline"
 NODE_BINS_DIR="$NVM_OFFLINE_DIR/node_bins"
+CONFIG_FILE=$(detect_shell)
 
-# 根据版本号设置具体的版本
-case $VERSION in
-    16)
-        NODE_VERSION="node-v16.20.2-linux-x64"
-        ;;
-    18)
-        NODE_VERSION="node-v18.20.8-linux-x64"
-        ;;
-    20)
-        NODE_VERSION="node-v20.19.5-linux-x64"
-        ;;
-    22)
-        NODE_VERSION="node-v22.19.0-linux-x64"
-        ;;
-    *)
-        echo "不支持的Node.js版本: $VERSION"
-        echo "可用版本: 16, 18, 20, 22"
-        exit 1
-        ;;
-esac
+# 动态确定Node.js版本目录
+NODE_VERSION=""
+for file in "$NODE_BINS_DIR"/node-v"$VERSION"*-linux-x64.tar.xz; do
+    if [[ -f "$file" ]]; then
+        NODE_VERSION=$(basename "$file" .tar.xz)
+        break
+    fi
+done
 
-# 检查版本文件是否存在
-if [ ! -d "$NODE_BINS_DIR/$NODE_VERSION" ]; then
-    # 解压对应的版本
-    if [ -f "$NODE_BINS_DIR/$NODE_VERSION.tar.xz" ]; then
-        echo "正在解压Node.js $VERSION..."
-        tar -xf "$NODE_BINS_DIR/$NODE_VERSION.tar.xz" -C "$NODE_BINS_DIR"
+# 检查是否找到匹配的版本
+if [[ -z "$NODE_VERSION" ]]; then
+    msg "Unsupported Node.js version: $VERSION" "不支持的Node.js版本: $VERSION"
+    
+    # 显示可用版本
+    if [[ -d "$NODE_BINS_DIR" ]]; then
+        msg "Available versions: $(get_available_versions "$NODE_BINS_DIR" | tr '\n' ' ')" "可用版本: $(get_available_versions "$NODE_BINS_DIR" | tr '\n' ' ')"
     else
-        echo "找不到Node.js $VERSION的安装包"
+        msg "Available versions: 16, 18, 20, 22" "可用版本: 16, 18, 20, 22"
+    fi
+    
+    exit 1
+fi
+
+# 检查版本目录是否存在，如果不存在则解压
+if [[ ! -d "$NODE_BINS_DIR/$NODE_VERSION" ]]; then
+    # 解压对应的版本
+    if [[ -f "$NODE_BINS_DIR/$NODE_VERSION.tar.xz" ]]; then
+        msg "Extracting Node.js $VERSION..." "正在解压Node.js $VERSION..."
+        if ! tar -xf "$NODE_BINS_DIR/$NODE_VERSION.tar.xz" -C "$NODE_BINS_DIR"; then
+            msg "Failed to extract Node.js $VERSION" "解压Node.js $VERSION失败"
+            exit 1
+        fi
+    else
+        msg "Cannot find Node.js $VERSION installation package" "找不到Node.js $VERSION的安装包"
         exit 1
     fi
 fi
@@ -51,8 +181,13 @@ export PATH="$NODE_BINS_DIR/$NODE_VERSION/bin:$PATH"
 
 # 验证Node.js版本
 NODE_VERSION_OUTPUT=$(node --version)
-echo "已切换到Node.js $NODE_VERSION_OUTPUT"
+msg "Switched to Node.js $NODE_VERSION_OUTPUT" "已切换到Node.js $NODE_VERSION_OUTPUT"
 
-# 将环境变量添加到.bashrc以便持久化
-grep -q "export PATH=.*$NODE_VERSION" ~/.bashrc || \
-    echo "export PATH=\"$NODE_BINS_DIR/$NODE_VERSION/bin:\$PATH\"" >> ~/.bashrc
+# 将环境变量添加到相应shell的配置文件以便持久化
+if ! add_path_to_config "$CONFIG_FILE" "$NODE_BINS_DIR/$NODE_VERSION/bin"; then
+    msg "Failed to update shell configuration file: $CONFIG_FILE" "更新shell配置文件失败: $CONFIG_FILE"
+    exit 1
+fi
+
+msg "Configuration file used: $CONFIG_FILE" "使用的配置文件: $CONFIG_FILE"
+msg "To switch languages, use the --lang parameter or set the LANGUAGE environment variable to 'en' or 'zh'." "要切换语言，请使用--lang参数或将LANGUAGE环境变量设置为'en'或'zh'。"
