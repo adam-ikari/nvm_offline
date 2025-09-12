@@ -1,0 +1,34 @@
+name: Test Scripts
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-scripts:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up environment
+      run: |
+        # 给测试脚本添加执行权限
+        chmod +x tests/test_install.sh
+        chmod +x tests/test_nvm_use.sh
+        chmod +x nvm_offline/scripts/install.sh
+        chmod +x nvm_offline/scripts/nvm_use
+        
+    - name: Test install.sh script
+      run: |
+        echo "Running install.sh tests..."
+        ./tests/test_install.sh
+        
+    - name: Test nvm_use script
+      run: |
+        echo "Running nvm_use tests..."
+        ./tests/test_nvm_use.sh
