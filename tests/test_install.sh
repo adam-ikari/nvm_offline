@@ -5,6 +5,11 @@
 # 启用严格的错误处理
 set -euo pipefail
 
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+NVM_OFFLINE_DIR="$PROJECT_DIR/nvm_offline"
+
 # 测试目录
 TEST_DIR="/tmp/nvm_offline_test"
 CONFIG_DIR="$TEST_DIR/config"
@@ -18,7 +23,17 @@ setup() {
     mkdir -p "$INSTALL_TARGET"
     
     # 复制脚本到测试目录
-    cp -r /home/zhaodi-chen/project/nvm_offline/nvm_offline/* "$TEST_DIR/"
+    mkdir -p "$TEST_DIR/scripts"
+    cp "$NVM_OFFLINE_DIR/scripts/install.sh" "$TEST_DIR/scripts/"
+    
+    # 创建模拟的node_bins目录
+    mkdir -p "$TEST_DIR/node_bins"
+    
+    # 创建模拟的Node.js二进制文件
+    touch "$TEST_DIR/node_bins/node-v16.20.2-linux-x64.tar.xz"
+    touch "$TEST_DIR/node_bins/node-v18.20.8-linux-x64.tar.xz"
+    touch "$TEST_DIR/node_bins/node-v20.19.5-linux-x64.tar.xz"
+    touch "$TEST_DIR/node_bins/node-v22.19.0-linux-x64.tar.xz"
     
     # 创建模拟的配置文件
     echo "# Test config file" > "$CONFIG_DIR/.bashrc"
@@ -61,22 +76,21 @@ test_script_runs() {
     local original_shell="$SHELL"
     export SHELL="/bin/bash"
     
+    # 创建模拟的配置文件
+    echo "# Test bash config" > "$temp_home/.bashrc"
+    
     # 运行脚本（使用--help参数，但脚本没有这个参数，所以我们只检查是否能启动）
     # 我们会捕获输出并检查是否有错误
-    if ! timeout 10s "$TEST_DIR/scripts/install.sh" --lang en 2>/dev/null; then
-        # 脚本退出码不为0是正常的，因为没有提供必需的参数
-        # 我们只关心是否有错误输出
-        local output
-        output=$(timeout 10s "$TEST_DIR/scripts/install.sh" --lang en 2>&1 || true)
-        
-        # 如果输出中包含明显的错误信息，则测试失败
-        if echo "$output" | grep -q "command not found\|error\|failed"; then
-            echo "FAIL: install.sh produced error output"
-            echo "$output"
-            export HOME="$original_home"
-            export SHELL="$original_shell"
-            return 1
-        fi
+    local output
+    output=$(timeout 10s "$TEST_DIR/scripts/install.sh" --lang en 2>&1 || true)
+    
+    # 如果输出中包含明显的错误信息，则测试失败
+    if echo "$output" | grep -q "command not found\|error\|failed"; then
+        echo "FAIL: install.sh produced error output"
+        echo "$output"
+        export HOME="$original_home"
+        export SHELL="$original_shell"
+        return 1
     fi
     
     # 恢复环境变量

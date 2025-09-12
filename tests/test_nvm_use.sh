@@ -5,6 +5,11 @@
 # 启用严格的错误处理
 set -euo pipefail
 
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+NVM_OFFLINE_DIR="$PROJECT_DIR/nvm_offline"
+
 # 测试目录
 TEST_DIR="/tmp/nvm_offline_test"
 CONFIG_DIR="$TEST_DIR/config"
@@ -16,7 +21,8 @@ setup() {
     mkdir -p "$CONFIG_DIR"
     
     # 复制脚本到测试目录
-    cp -r /home/zhaodi-chen/project/nvm_offline/nvm_offline/* "$TEST_DIR/"
+    mkdir -p "$TEST_DIR/scripts"
+    cp "$NVM_OFFLINE_DIR/scripts/nvm_use" "$TEST_DIR/scripts/"
     
     # 创建模拟的配置文件
     echo "# Test config file" > "$CONFIG_DIR/.bashrc"
@@ -30,7 +36,6 @@ setup() {
     
     # 创建一个已解压的版本目录
     mkdir -p "$TEST_DIR/node_bins/node-v16.20.2-linux-x64/bin"
-    echo "v16.20.2" > "$TEST_DIR/node_bins/node-v16.20.2-linux-x64/bin/node"
     
     # 创建模拟的node命令
     cat > "$TEST_DIR/node_bins/node-v16.20.2-linux-x64/bin/node" << 'EOF'
