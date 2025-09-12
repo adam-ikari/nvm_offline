@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# NVM Offline Version Switch Script
+
+# 检查参数
+if [ $# -eq 0 ]; then
+    echo "用法: nvm_use <version>"
+    echo "可用版本: 16, 18, 20, 22"
+    exit 1
+fi
+
+VERSION=$1
+NVM_OFFLINE_DIR="$HOME/.nvm_offline"
+NODE_BINS_DIR="$NVM_OFFLINE_DIR/node_bins"
+
+# 根据版本号设置具体的版本
+case $VERSION in
+    16)
+        NODE_VERSION="node-v16.20.2-linux-x64"
+        ;;
+    18)
+        NODE_VERSION="node-v18.20.8-linux-x64"
+        ;;
+    20)
+        NODE_VERSION="node-v20.19.5-linux-x64"
+        ;;
+    22)
+        NODE_VERSION="node-v22.19.0-linux-x64"
+        ;;
+    *)
+        echo "不支持的Node.js版本: $VERSION"
+        echo "可用版本: 16, 18, 20, 22"
+        exit 1
+        ;;
+esac
+
+# 检查版本文件是否存在
+if [ ! -d "$NODE_BINS_DIR/$NODE_VERSION" ]; then
+    # 解压对应的版本
+    if [ -f "$NODE_BINS_DIR/$NODE_VERSION.tar.xz" ]; then
+        echo "正在解压Node.js $VERSION..."
+        tar -xf "$NODE_BINS_DIR/$NODE_VERSION.tar.xz" -C "$NODE_BINS_DIR"
+    else
+        echo "找不到Node.js $VERSION的安装包"
+        exit 1
+    fi
+fi
+
+# 设置PATH环境变量
+export PATH="$NODE_BINS_DIR/$NODE_VERSION/bin:$PATH"
+
+# 验证Node.js版本
+NODE_VERSION_OUTPUT=$(node --version)
+echo "已切换到Node.js $NODE_VERSION_OUTPUT"
+
+# 将环境变量添加到.bashrc以便持久化
+grep -q "export PATH=.*$NODE_VERSION" ~/.bashrc || \
+    echo "export PATH=\"$NODE_BINS_DIR/$NODE_VERSION/bin:\$PATH\"" >> ~/.bashrc

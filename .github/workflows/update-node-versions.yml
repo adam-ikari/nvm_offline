@@ -1,0 +1,77 @@
+name: Check and Update Node.js Versions
+
+on:
+  schedule:
+    # 每周日凌晨2点运行
+    - cron: '0 2 * * 0'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check latest Node.js versions
+        id: check_versions
+        run: |
+          # 获取最新的LTS版本和当前版本
+          LTS_VERSION=$(curl -s https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)] | first | .version')
+          CURRENT_VERSION=$(curl -s https://nodejs.org/dist/index.json | jq -r 'first | .version')
+          
+          echo "LTS_VERSION=$LTS_VERSION" >> $GITHUB_ENV
+          echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
+          
+          # 检查本地是否已有这些版本
+          if [ -f "nvm_offline/node_bins/node-${LTS_VERSION}-linux-x64.tar.xz" ]; then
+            echo "LTS_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "LTS_EXISTS=false" >> $GITHUB_ENV
+          fi
+          
+          if [ -f "nvm_offline/node_bins/node-${CURRENT_VERSION}-linux-x64.tar.xz" ]; then
+            echo "CURRENT_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "CURRENT_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Download new LTS version
+        if: env.LTS_EXISTS == 'false'
+        run: |
+          LTS_VERSION_CLEAN=${LTS_VERSION#v}  # 移除版本号前的'v'
+          wget https://nodejs.org/dist/${LTS_VERSION}/node-${LTS_VERSION_CLEAN}-linux-x64.tar.xz -P nvm_offline/node_bins/
+          echo "Downloaded new LTS version: ${LTS_VERSION}"
+
+      - name: Download new Current version
+        if: env.CURRENT_EXISTS == 'false'
+        run: |
+          CURRENT_VERSION_CLEAN=${CURRENT_VERSION#v}  # 移除版本号前的'v'
+          wget https://nodejs.org/dist/${CURRENT_VERSION}/node-${CURRENT_VERSION_CLEAN}-linux-x64.tar.xz -P nvm_offline/node_bins/
+          echo "Downloaded new Current version: ${CURRENT_VERSION}"
+
+      - name: Update package
+        if: env.LTS_EXISTS == 'false' || env.CURRENT_EXISTS == 'false'
+        run: |
+          # 重新打包nvm_offline_package.tar.gz
+          tar -czf nvm_offline_package.tar.gz nvm_offline/
+          echo "Updated nvm_offline_package.tar.gz"
+
+      - name: Commit and push changes
+        if: env.LTS_EXISTS == 'false' || env.CURRENT_EXISTS == 'false'
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add nvm_offline/node_bins/ nvm_offline_package.tar.gz
+          git commit -m "Update Node.js versions - LTS: $LTS_VERSION, Current: $CURRENT_VERSION"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
